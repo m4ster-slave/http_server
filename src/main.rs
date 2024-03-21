@@ -2,6 +2,7 @@ use std::{
     io::BufReader,
     io::prelude::*,
     net::{TcpListener, TcpStream},
+    thread,
 };
 
 
@@ -12,8 +13,9 @@ fn main() {
         match stream {
             Ok (_stream) => {
                 println!("accepted new connection");
-                handle_conn(_stream);
-                println!("\n\n");
+                thread::spawn(|| {
+                    handle_conn(_stream);
+                });
             }
             Err (e) => {
                 println!("error: {}", e);
@@ -49,6 +51,7 @@ fn handle_conn(mut stream: TcpStream){
     }            
 
     stream.write_all(response.as_bytes()).unwrap();
+    println!("\n\n");
 }
 
 fn get_echo_string(path: &str) -> String {
