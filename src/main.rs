@@ -13,6 +13,7 @@ fn main() {
             Ok (_stream) => {
                 println!("accepted new connection");
                 handle_conn(_stream);
+                println!("\n\n");
             }
             Err (e) => {
                 println!("error: {}", e);
@@ -35,10 +36,10 @@ fn handle_conn(mut stream: TcpStream){
 
     let response: String;
     if path.starts_with("/echo/") {
-        let path = path.strip_prefix("/echo/").unwrap();
-        println!("echo request: {}", path);
-        const CRLF: &str = "\r\n";
-        response = format!("HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{path}", path.len());
+        response = get_echo_string(path);
+    } 
+    else if path == "/user-agent" {
+        response = get_user_agent(http_request);
     } 
     else if path == "/" {
         response = "HTTP/1.1 200 OK\r\n\r\n".to_string();
@@ -48,4 +49,26 @@ fn handle_conn(mut stream: TcpStream){
     }            
 
     stream.write_all(response.as_bytes()).unwrap();
+}
+
+fn get_echo_string(path: &str) -> String {
+    let path = path.strip_prefix("/echo/").unwrap();
+    println!("echo request: {}", path);
+    const CRLF: &str = "\r\n";
+
+    format!("HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{path}", path.len())
+}
+
+fn get_user_agent(http_request: Vec<String>) -> String {
+    let mut user_agent = String::from("no user agent in request header");
+    for s in http_request {
+        if s.starts_with("User-Agent: ") {
+            user_agent = s.strip_prefix("User-Agent: ").unwrap().to_string();        
+            break;
+        } 
+    }
+
+    println!("user_agent: {}", user_agent);
+    const CRLF: &str = "\r\n";
+    format!("HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{user_agent}", user_agent.len())
 }
