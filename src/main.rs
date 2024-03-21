@@ -28,6 +28,6 @@ fn main()
 
 fn handle_conn (mut stream: TcpStream)
 {
-    let response = "HTTP/1.1 200 OK";
+    let response = "HTTP/1.1 200 OK\r\n\r\n";
     stream.write_all(response.as_bytes()).unwrap();
 }
