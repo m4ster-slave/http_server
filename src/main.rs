@@ -1,27 +1,23 @@
 use std::{
-    env,
-    fs,
-    io::BufReader,
+    env, fs,
     io::prelude::*,
     net::{TcpListener, TcpStream},
-    thread,
     path::Path,
+    thread,
 };
 
-
 fn main() {
-
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
         match stream {
-            Ok (stream) => {
+            Ok(stream) => {
                 println!("accepted new connection");
                 thread::spawn(|| {
                     handle_conn(stream);
                 });
             }
-            Err (e) => {
+            Err(e) => {
                 println!("error: {}", e);
             }
         }
@@ -62,36 +58,25 @@ fn handle_conn(mut stream: TcpStream) {
     if http_request.headers[0].starts_with("GET ") {
         if path.starts_with("/echo/") {
             response = get_echo_string(path);
-        } 
-        else if path.starts_with("/files/") {
+        } else if path.starts_with("/files/") {
             let args: Vec<String> = env::args().collect();
             let directory = get_directory_arg(args).unwrap();
             println!("DIRECTORY: {}", directory);
 
             response = get_file(path, &directory);
-        }
-        else if path == "/user-agent" {
+        } else if path == "/user-agent" {
             response = get_user_agent(http_request.headers);
-        } 
-
-        else if path == "/" {
+        } else if path == "/" {
             response = "HTTP/1.1 200 OK\r\n\r\n".to_string();
-        } 
-        else {
+        } else {
             response = "HTTP/1.1 404 Not Found\r\n\r\n".to_string();
-        }       
-    }
-    else if http_request.headers[0].starts_with("POST ") {
+        }
+    } else if http_request.headers[0].starts_with("POST ") {
         if path.starts_with("/files/") {
             let args: Vec<String> = env::args().collect();
             let directory = get_directory_arg(args).unwrap();
-            println!("DIRECTORY: {}", directory);
-            println!("BODY: {:?}", http_request.body);
-
-            response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", http_request.body.len(), http_request.body);
-
-            // response = post_file(path, &directory);
-        } 
+            response = post_file(&path, &directory, &http_request.body);
+        }
     }
 
     stream.write_all(response.as_bytes()).unwrap();
@@ -103,16 +88,19 @@ fn get_echo_string(path: &str) -> String {
     println!("echo request: {}", path);
     const CRLF: &str = "\r\n";
 
-    format!("HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{path}", path.len())
+    format!(
+        "HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{path}",
+        path.len()
+    )
 }
 
 fn get_user_agent(http_request: Vec<&str>) -> String {
     let mut user_agent = String::from("no user agent in request header");
     for s in http_request {
         if s.starts_with("User-Agent: ") {
-            user_agent = s.strip_prefix("User-Agent: ").unwrap().to_string();        
+            user_agent = s.strip_prefix("User-Agent: ").unwrap().to_string();
             break;
-        } 
+        }
     }
 
     println!("user_agent: {}", user_agent);
@@ -145,18 +133,16 @@ fn get_file(request_path: &str, file_path: &str) -> String {
     format!("HTTP/1.1 200 OK{CRLF}Content-Type: application/octet-stream{CRLF}Content-Length: {}{CRLF}{CRLF}{contents}", contents.len())
 }
 
-fn post_file(
-    request_path: &str, 
-    file_path: &str) 
--> String {
+fn post_file(request_path: &str, file_path: &str, body: &str) -> String {
     let file_name = request_path.strip_prefix("/files/").unwrap();
     let mut full_path = String::from(file_path);
     full_path.push_str(file_name);
+    println!("FILE: {}", full_path);
+    // println!("BODY: {}", body);
 
     println!("file posted: {}", full_path);
-
     let mut file = std::fs::File::create(full_path).unwrap();
-
+    file.write_all(&body.as_bytes()).unwrap();
 
     format!("HTTP/1.1 201 Created\r\n\r\n")
 }
