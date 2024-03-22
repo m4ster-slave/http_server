@@ -28,21 +28,38 @@ fn main() {
     }
 }
 
+struct HttpRequest<'a> {
+    headers: Vec<&'a str>,
+    body: &'a str,
+}
+
+impl<'a> HttpRequest<'a> {
+    fn new(headers: Vec<&'a str>, body: &'a str) -> Self {
+        HttpRequest { headers, body }
+    }
+}
+
+fn separate_headers_and_body(input: &str) -> Option<HttpRequest> {
+    if let Some(body_start) = input.find("\r\n\r\n") {
+        let (headers_str, body) = input.split_at(body_start);
+        let headers: Vec<&str> = headers_str.split("\r\n").collect::<Vec<&str>>();
+        Some(HttpRequest::new(headers, &body[4..])) // Skip the "\r\n\r\n"
+    } else {
+        None
+    }
+}
+
 fn handle_conn(mut stream: TcpStream) {
-
-    let buf_reader = BufReader::new(&stream);
-    let http_request: Vec<_> = buf_reader
-        .lines()
-        .map(|result| result.unwrap())
-        .take_while(|line| !line.is_empty())
-        .collect();
-
-    println!("Request content: {:?}", http_request);
+    let mut buffer = [0; 2048];
+    stream.read(&mut buffer).unwrap();
+    let http_request = String::from_utf8_lossy(&buffer[..]);
+    let http_request: HttpRequest = separate_headers_and_body(&http_request).unwrap();
+    println!("HEADERS: {:?}\n\n", http_request.headers);
 
     let mut response = String::from("HTTP/1.1 400 Bad Request");
-    let path = http_request[0].split_whitespace().nth(1).unwrap();
+    let path = http_request.headers[0].split_whitespace().nth(1).unwrap();
 
-    if http_request[0].starts_with("GET ") {
+    if http_request.headers[0].starts_with("GET ") {
         if path.starts_with("/echo/") {
             response = get_echo_string(path);
         } 
@@ -54,7 +71,7 @@ fn handle_conn(mut stream: TcpStream) {
             response = get_file(path, &directory);
         }
         else if path == "/user-agent" {
-            response = get_user_agent(http_request);
+            response = get_user_agent(http_request.headers);
         } 
 
         else if path == "/" {
@@ -64,13 +81,16 @@ fn handle_conn(mut stream: TcpStream) {
             response = "HTTP/1.1 404 Not Found\r\n\r\n".to_string();
         }       
     }
-    else if http_request[0].starts_with("POST ") {
+    else if http_request.headers[0].starts_with("POST ") {
         if path.starts_with("/files/") {
             let args: Vec<String> = env::args().collect();
             let directory = get_directory_arg(args).unwrap();
             println!("DIRECTORY: {}", directory);
+            println!("BODY: {:?}", http_request.body);
 
-            response = post_file(path, &directory);
+            response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", http_request.body.len(), http_request.body);
+
+            // response = post_file(path, &directory);
         } 
     }
 
@@ -86,7 +106,7 @@ fn get_echo_string(path: &str) -> String {
     format!("HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{path}", path.len())
 }
 
-fn get_user_agent(http_request: Vec<String>) -> String {
+fn get_user_agent(http_request: Vec<&str>) -> String {
     let mut user_agent = String::from("no user agent in request header");
     for s in http_request {
         if s.starts_with("User-Agent: ") {
