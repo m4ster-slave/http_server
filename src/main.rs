@@ -75,7 +75,7 @@ fn handle_conn(mut stream: TcpStream) {
         if path.starts_with("/files/") {
             let args: Vec<String> = env::args().collect();
             let directory = get_directory_arg(args).unwrap();
-            response = post_file(&path, &directory, &http_request.body);
+            response = post_file(&path, &directory, &http_request.body, get_body_size(http_request.headers));
         }
     }
 
@@ -117,6 +117,18 @@ fn get_directory_arg(args: Vec<String>) -> Option<String> {
     panic!("no directory set\n");
 }
 
+fn get_body_size(http_request: Vec<&str>) -> usize {
+    let mut body_size = 0;
+        for s in http_request {
+        if s.starts_with("Content-Length: ") {
+            body_size = s.strip_prefix("Content-Length: ").unwrap().parse::<usize>().unwrap();
+            break;
+        }
+    }
+
+    body_size
+}
+
 fn get_file(request_path: &str, file_path: &str) -> String {
     let file_name = request_path.strip_prefix("/files/").unwrap();
     let mut full_path = String::from(file_path);
@@ -133,16 +145,18 @@ fn get_file(request_path: &str, file_path: &str) -> String {
     format!("HTTP/1.1 200 OK{CRLF}Content-Type: application/octet-stream{CRLF}Content-Length: {}{CRLF}{CRLF}{contents}", contents.len())
 }
 
-fn post_file(request_path: &str, file_path: &str, body: &str) -> String {
+fn post_file(request_path: &str, file_path: &str, body: &str, max_characters: usize) -> String {
     let file_name = request_path.strip_prefix("/files/").unwrap();
     let mut full_path = String::from(file_path);
     full_path.push_str(file_name);
     println!("FILE: {}", full_path);
-    // println!("BODY: {}", body);
+    println!("BODY: {}", body);
 
     println!("file posted: {}", full_path);
     let mut file = std::fs::File::create(full_path).unwrap();
-    file.write_all(&body.as_bytes()).unwrap();
+
+    let body_slice = &body.as_bytes()[..max_characters];
+    file.write_all(body_slice).unwrap();
 
     format!("HTTP/1.1 201 Created\r\n\r\n")
 }
