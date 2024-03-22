@@ -15,10 +15,10 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok (_stream) => {
+            Ok (stream) => {
                 println!("accepted new connection");
                 thread::spawn(|| {
-                    handle_conn(_stream);
+                    handle_conn(stream);
                 });
             }
             Err (e) => {
@@ -28,9 +28,9 @@ fn main() {
     }
 }
 
+fn handle_conn(mut stream: TcpStream) {
 
-fn handle_conn(mut stream: TcpStream){
-    let buf_reader = BufReader::new(&mut stream);
+    let buf_reader = BufReader::new(&stream);
     let http_request: Vec<_> = buf_reader
         .lines()
         .map(|result| result.unwrap())
@@ -38,29 +38,41 @@ fn handle_conn(mut stream: TcpStream){
         .collect();
 
     println!("Request content: {:?}", http_request);
+
+    let mut response = String::from("HTTP/1.1 400 Bad Request");
     let path = http_request[0].split_whitespace().nth(1).unwrap();
 
-    let response: String;
-    if path.starts_with("/echo/") {
-        response = get_echo_string(path);
-    } 
-    else if path.starts_with("/files/") {
-        let args: Vec<String> = env::args().collect();
-        let directory = get_directory_arg(args).unwrap();
-        println!("DIRECTORY: {directory}");
+    if http_request[0].starts_with("GET ") {
+        if path.starts_with("/echo/") {
+            response = get_echo_string(path);
+        } 
+        else if path.starts_with("/files/") {
+            let args: Vec<String> = env::args().collect();
+            let directory = get_directory_arg(args).unwrap();
+            println!("DIRECTORY: {}", directory);
 
-        response = get_file(path, &directory);
+            response = get_file(path, &directory);
+        }
+        else if path == "/user-agent" {
+            response = get_user_agent(http_request);
+        } 
+
+        else if path == "/" {
+            response = "HTTP/1.1 200 OK\r\n\r\n".to_string();
+        } 
+        else {
+            response = "HTTP/1.1 404 Not Found\r\n\r\n".to_string();
+        }       
     }
-    else if path == "/user-agent" {
-        response = get_user_agent(http_request);
-    } 
+    else if http_request[0].starts_with("POST ") {
+        if path.starts_with("/files/") {
+            let args: Vec<String> = env::args().collect();
+            let directory = get_directory_arg(args).unwrap();
+            println!("DIRECTORY: {}", directory);
 
-    else if path == "/" {
-        response = "HTTP/1.1 200 OK\r\n\r\n".to_string();
-    } 
-    else {
-        response = "HTTP/1.1 404 Not Found\r\n\r\n".to_string();
-    }            
+            response = post_file(path, &directory);
+        } 
+    }
 
     stream.write_all(response.as_bytes()).unwrap();
     println!("\n\n");
@@ -111,4 +123,20 @@ fn get_file(request_path: &str, file_path: &str) -> String {
 
     const CRLF: &str = "\r\n";
     format!("HTTP/1.1 200 OK{CRLF}Content-Type: application/octet-stream{CRLF}Content-Length: {}{CRLF}{CRLF}{contents}", contents.len())
+}
+
+fn post_file(
+    request_path: &str, 
+    file_path: &str) 
+-> String {
+    let file_name = request_path.strip_prefix("/files/").unwrap();
+    let mut full_path = String::from(file_path);
+    full_path.push_str(file_name);
+
+    println!("file posted: {}", full_path);
+
+    let mut file = std::fs::File::create(full_path).unwrap();
+
+
+    format!("HTTP/1.1 201 Created\r\n\r\n")
 }
