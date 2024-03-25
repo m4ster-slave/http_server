@@ -5,11 +5,12 @@ use std::{
     thread,
 };
 
-use http_server_starter_rust::http_request::HttpRequest;
-use http_server_starter_rust::http_response;
+use http_server::http_request::HttpRequest;
+use http_server::http_response;
 
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+    println!("listening on 127.0.0.1:8080");
 
     let args: Vec<String> = env::args().collect();
     let directory = get_directory_arg(&args).unwrap_or_else(|err| {
