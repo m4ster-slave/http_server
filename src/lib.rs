@@ -1,3 +1,4 @@
+extern crate flate2;
 
 pub mod http_request {
     pub struct HttpRequest<'a> {
@@ -10,11 +11,15 @@ pub mod http_request {
             HttpRequest { headers, body }
         }
 
-        pub fn get_body_size(self) -> usize {
+        pub fn get_body_size(&self) -> usize {
             let mut body_size = 0;
-                for header in self.headers {
+            for header in &self.headers {
                 if header.starts_with("Content-Length: ") {
-                    body_size = header.strip_prefix("Content-Length: ").unwrap().parse::<usize>().unwrap();
+                    body_size = header
+                        .strip_prefix("Content-Length: ")
+                        .unwrap()
+                        .parse::<usize>()
+                        .unwrap();
                     break;
                 }
             }
@@ -22,70 +27,129 @@ pub mod http_request {
             body_size
         }
     }
-
 }
 
 pub mod http_response {
-    use std::{
-        fs,
-        path::Path,
-        io::prelude::*,
-    };
+    use flate2::{write::GzEncoder, Compression};
+    use std::{fs, io::Write, path::Path};
 
     const CRLF: &str = "\r\n";
 
-    pub fn get_echo_string(path: &str) -> String {
-        let path = path.strip_prefix("/echo/").unwrap();
-        println!("echo request: {}", path);
-
-        format!(
-            "HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{path}",
-            path.len()
-        )
+    pub struct HttpResponse {
+        pub headers: Vec<String>,
+        pub body: Vec<u8>,
     }
 
-    pub fn get_user_agent(http_request: Vec<&str>) -> String {
-        let mut user_agent = "no user agent in request header".to_string();
-        for s in http_request {
-            if s.starts_with("User-Agent: ") {
-                user_agent = s.strip_prefix("User-Agent: ").unwrap().to_string();
-                break;
+    impl HttpResponse {
+        pub fn create() -> HttpResponse {
+            HttpResponse {
+                headers: vec![String::from("HTTP/1.1 400 Bad Request")],
+                body: Vec::new(),
             }
         }
 
-        println!("user_agent: {}", user_agent);
-        format!("HTTP/1.1 200 OK{CRLF}Content-Type: text/plain{CRLF}Content-Length: {}{CRLF}{CRLF}{user_agent}", user_agent.len())
-    }
+        pub fn return_echo_string(&mut self, path: &str) {
+            let path = path.strip_prefix("/echo/").unwrap();
 
-    pub fn get_file(request_path: &str, file_path: &str) -> String {
-        let file_name = request_path.strip_prefix("/files/").unwrap();
-        let mut full_path = String::from(file_path);
-        full_path.push_str(file_name);
+            self.headers[0] = String::from("HTTP/1.1 200 OK");
+            self.headers.push(String::from("Content-Type: text/plain"));
 
-        println!("file requested: {}", full_path);
-        if !Path::new(&full_path).exists() {
-            return "HTTP/1.1 404 Not Found{CRLF}".to_string();
+            self.body = Vec::from(path);
         }
 
-        let contents = fs::read_to_string(full_path).unwrap();
+        pub fn return_user_agent(&mut self, http_request: &Vec<&str>) {
+            let mut user_agent = "no user agent in request header".to_string();
 
-        format!("HTTP/1.1 200 OK{CRLF}Content-Type: application/octet-stream{CRLF}Content-Length: {}{CRLF}{CRLF}{contents}", contents.len())
-    }
-    
+            for s in http_request {
+                if s.starts_with("User-Agent: ") {
+                    user_agent = s.strip_prefix("User-Agent: ").unwrap().to_string();
+                    break;
+                }
+            }
 
-    pub fn post_file(request_path: &str, file_path: &str, body: &str, max_characters: usize) -> String {
-        let file_name = request_path.strip_prefix("/files/").unwrap();
-        let mut full_path = String::from(file_path);
-        full_path.push_str(file_name);
-        println!("FILE: {}", full_path);
-        println!("BODY: {}", body);
+            self.headers[0] = String::from("HTTP/1.1 200 OK");
+            self.headers.push(String::from("Content-Type: text/plain"));
 
-        println!("file posted: {}", full_path);
-        let mut file = std::fs::File::create(full_path).unwrap();
+            self.body = Vec::from(user_agent);
+        }
 
-        let body_slice = &body.as_bytes()[..max_characters];
-        file.write_all(body_slice).unwrap();
+        pub fn get_file(&mut self, request_path: &str, file_path: &str) {
+            let file_name = request_path.strip_prefix("/files/").unwrap();
+            let mut full_path = String::from(file_path);
+            full_path.push_str(file_name);
 
-        format!("HTTP/1.1 201 Created{CRLF}")
+            if !Path::new(&full_path).exists() {
+                self.return_status_code(404);
+                return;
+            }
+
+            let contents = fs::read_to_string(full_path).unwrap();
+
+            self.headers[0] = String::from("HTTP/1.1 200 OK");
+            self.headers
+                .push(String::from("Content-Type: application/octet-stream"));
+
+            self.body = Vec::from(contents);
+        }
+
+        pub fn return_status_code(&mut self, status_code: u32) {
+            match status_code {
+                200 => self.headers[0] = String::from("HTTP/1.1 200 OK"),
+                404 => self.headers[0] = String::from("HTTP/1.1 404 Not Found"),
+                201 => self.headers[0] = String::from("HTTP/1.1 201 Created"),
+                405 => self.headers[0] = String::from("HTTP/1.1 405 Method Not Allowed"),
+                _ => panic!("Status code unimplemented"),
+            }
+        }
+
+        pub fn post_file(
+            &mut self,
+            request_path: &str,
+            file_path: &str,
+            body: &str,
+            max_characters: usize,
+        ) {
+            let file_name = request_path.strip_prefix("/files/").unwrap();
+            let mut full_path = String::from(file_path);
+            full_path.push_str(file_name);
+
+            let mut file = std::fs::File::create(full_path).unwrap();
+
+            let body_slice = &body.as_bytes()[..max_characters];
+            file.write_all(body_slice).unwrap();
+
+            self.return_status_code(201);
+        }
+
+        pub fn write_response(&self) -> Vec<u8> {
+            let mut response = Vec::new();
+
+            // Convert headers to a single string with CRLF
+            for s in &self.headers {
+                response.extend_from_slice(s.as_bytes());
+                response.extend_from_slice(CRLF.as_bytes());
+            }
+            // Add an extra CRLF to separate headers from the body
+            response.extend_from_slice(CRLF.as_bytes());
+
+            // Append the body to the response
+            response.extend_from_slice(&self.body);
+
+            response
+        }
+
+        pub fn compress(&mut self, request_header: &Vec<&str>) {
+            for s in request_header {
+                if s.starts_with("Accept-Encoding: ") && s.contains("gzip") {
+                    self.headers.push(String::from("Content-Encoding: gzip"));
+                    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                    encoder.write_all(&self.body).unwrap();
+                    let compressed_body = encoder.finish().unwrap();
+
+                    self.body = compressed_body.to_vec();
+                    break;
+                }
+            }
+        }
     }
 }
