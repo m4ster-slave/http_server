@@ -5,7 +5,8 @@ use std::{
     thread,
 };
 
-use http_server::{http_request::HttpRequest, http_response::HttpResponse};
+
+use http_server::http_msg::HttpMsg;
 
 fn main() {
     let listener = TcpListener::bind("0.0.0.0:8080").unwrap();
@@ -37,10 +38,12 @@ fn handle_conn(mut stream: TcpStream, directory: &str) {
     let mut buffer = [0; 2048];
     stream.read(&mut buffer).unwrap();
     let http_request = String::from_utf8_lossy(&buffer[..]);
-    let http_request: HttpRequest = separate_headers_and_body(&http_request).unwrap();
+
+    // convert string into HttpMsg type 
+    let http_request: HttpMsg = HttpMsg::from(&http_request);
     print!("{}\n", http_request.headers[0]);
 
-    let mut response = HttpResponse::create();
+    let mut response = HttpMsg::create();
     let path = http_request.headers[0].split_whitespace().nth(1).unwrap();
 
     if http_request.headers[0].starts_with("GET ") {
@@ -60,8 +63,8 @@ fn handle_conn(mut stream: TcpStream, directory: &str) {
             response.post_file(
                 &path,
                 &directory,
-                &http_request.body,
-                http_request.get_body_size(),
+                http_request.body.clone(),
+                http_request.body.len(),
             );
         }
     }
@@ -80,16 +83,6 @@ fn handle_conn(mut stream: TcpStream, directory: &str) {
         .unwrap();
 }
 
-fn separate_headers_and_body(input: &str) -> Option<HttpRequest> {
-    if let Some(body_start) = input.find("\r\n\r\n") {
-        let (headers_str, body) = input.split_at(body_start);
-        let headers: Vec<&str> = headers_str.split("\r\n").collect::<Vec<&str>>();
-        Some(HttpRequest::new(headers, &body[4..])) // Skip the "\r\n\r\n"
-    } else {
-        None
-    }
-}
-
 fn get_directory_arg(args: &[String]) -> Result<String, &'static str> {
     if let Some(index) = args.iter().position(|arg| arg == "--directory") {
         if let Some(dir_arg) = args.get(index + 1) {
@@ -98,5 +91,3 @@ fn get_directory_arg(args: &[String]) -> Result<String, &'static str> {
     }
     Err("No directory argument found")
 }
-
-// fn compress_response(response: String, request_header: &Vec<&str>) -> String {}
