@@ -81,13 +81,11 @@ pub mod http_response {
                 return;
             }
 
-            let contents = fs::read_to_string(full_path).unwrap();
+            self.body = fs::read(full_path).unwrap();
 
             self.headers[0] = String::from("HTTP/1.1 200 OK");
             self.headers
                 .push(String::from("Content-Type: application/octet-stream"));
-
-            self.body = Vec::from(contents);
         }
 
         pub fn return_status_code(&mut self, status_code: u32) {
