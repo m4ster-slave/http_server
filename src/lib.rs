@@ -1,34 +1,5 @@
 extern crate flate2;
 
-//pub mod http_request {
-//    pub struct HttpRequest<'a> {
-//        pub headers: Vec<&'a str>,
-//        pub body: &'a str,
-//    }
-//
-//    impl<'a> HttpRequest<'a> {
-//        pub fn new(headers: Vec<&'a str>, body: &'a str) -> Self {
-//            HttpRequest { headers, body }
-//        }
-//
-//        pub fn get_body_size(&self) -> usize {
-//            let mut body_size = 0;
-//            for header in &self.headers {
-//                if header.starts_with("Content-Length: ") {
-//                    body_size = header
-//                        .strip_prefix("Content-Length: ")
-//                        .unwrap()
-//                        .parse::<usize>()
-//                        .unwrap();
-//                    break;
-//                }
-//            }
-//
-//            body_size
-//        }
-//    }
-//}
-
 pub mod http_msg {
     pub struct HttpMsg {
         pub headers: Vec<String>,
@@ -166,15 +137,17 @@ pub mod http_response {
         }
 
         pub fn compress(&mut self, request_header: &Vec<String>) {
-            for s in request_header {
-                if s.starts_with("Accept-Encoding: ") && s.contains("gzip") {
-                    self.headers.push(String::from("Content-Encoding: gzip"));
-                    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-                    encoder.write_all(&self.body).unwrap();
-                    let compressed_body = encoder.finish().unwrap();
+            if !self.body.is_empty() {
+                for s in request_header {
+                    if s.starts_with("Accept-Encoding: ") && s.contains("gzip") {
+                        self.headers.push(String::from("Content-Encoding: gzip"));
+                        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                        encoder.write_all(&self.body).unwrap();
+                        let compressed_body = encoder.finish().unwrap();
 
-                    self.body = compressed_body.to_vec();
-                    break;
+                        self.body = compressed_body.to_vec();
+                        break;
+                    }
                 }
             }
         }
